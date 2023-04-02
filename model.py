@@ -8,12 +8,13 @@ from tqdm import tqdm
 from dataset import Datapoint
 
 # device = "cuda" if torch.cuda.is_available() else "cpu"
-device = "cpu" # for now
+device = "cpu"  # for now
 
 # hyper-parameters
-EPOCHS = 100
-BATCH_SIZE = 64
-LR = 0.04
+EPOCHS = 20
+BATCH_SIZE = 16
+LR = 0.01
+MARGIN = 0.5  # error margin within which the prediction is considered correct
 
 
 class Net(nn.Module):
@@ -30,13 +31,8 @@ class Net(nn.Module):
 
 class GlucoseDataset(Dataset):
     def __init__(self, points: list[Datapoint]):
-        self.features = torch.Tensor([[x.current_bg,
-                                       x.average_bg,
-                                       x.last_carbs,
-                                       x.last_carbs_time,
-                                       x.last_insulin,
-                                       x.last_insulin_time] for x in points]).to(torch.device(device))
-        self.targets = torch.Tensor([x.next_bg for x in points]).to(torch.device(device))
+        # self.features = F.normalize(feats, dim=0)
+        self.features, self.targets = preprocess_dps(points)
 
     def __len__(self):
         return len(self.features)
@@ -45,8 +41,23 @@ class GlucoseDataset(Dataset):
         return self.features[idx], self.targets[idx]
 
 
+def preprocess_dps(points: list[Datapoint]) -> tuple[torch.Tensor, torch.Tensor]:
+    """Extracts features and targets from a list of Datapoint objects
+
+    :param points: list containing Datapoint objects
+    :return: tuple of preprocessed features and targets
+    """
+    return torch.Tensor([[x.current_bg,
+                          x.average_bg,
+                          x.last_carbs,
+                          x.last_carbs_time,
+                          x.last_insulin,
+                          x.last_insulin_time] for x in points]), \
+        torch.Tensor([x.next_bg for x in points])
+
+
 def training(model: Net, loader: DataLoader):
-    """Training loop for the mdoel
+    """Training loop for the model
 
     :param model: TODO
     :param loader:
@@ -68,7 +79,7 @@ def training(model: Net, loader: DataLoader):
         for batch in loader:
             inputs, target = batch
             # clear gradients from previous epoch
-            optim.zero_grad()  
+            optim.zero_grad()
             # make predictions for the current batch
             pred = model(inputs).squeeze()
             # compute the loss and its gradients
@@ -89,12 +100,22 @@ def training(model: Net, loader: DataLoader):
     print(f"Epoch accuracies:\n{accs}")
 
 
-def predict(model: Net, test_set: list[Datapoint]):
+def testing(model: Net, test_set: list[Datapoint]):
+    """TODO
+
+    :param model:
+    :param test_set:
+    :return:
+    """
     model.eval()
+    feats, targets = preprocess_dps(test_set)
     with torch.no_grad():
-        for dp in test_set:
-            # TODO
-            pass
+        pred = model(feats).squeeze()
+    verdicts = list(map(eval_pred, zip(targets, pred)))
+    errors = sorted([abs(targets[i] - pred[i]).item() for i in range(len(pred))])
+    print(f"Accuracy: {sum(verdicts) / len(verdicts):.2f}\n"
+          f"Average error: {sum(errors) / len(errors):.2f}\n"
+          f"Median error: {errors[len(errors) // 2]:.2f}")
 
 
 def eval_pred(y_pair: tuple[float, float]) -> float:
@@ -103,15 +124,18 @@ def eval_pred(y_pair: tuple[float, float]) -> float:
     :param y_pair: Tuple of target and predicted values
     :return: 1.0 if the prediction is correct, else 0.0
     """
-    return 1.0 if (abs(y_pair[0] - y_pair[1]) <= 1) else 0.0
+    return 1.0 if (abs(y_pair[0] - y_pair[1]) <= MARGIN) else 0.0
 
 
-def pipeline(data: list[Datapoint]):
+def pipeline(train_data: list[Datapoint], test_data: list[Datapoint]=None):
     model = Net(6, 24, 1)
     model = model.to(device)
-    train_data = GlucoseDataset(data)
+    train_data = GlucoseDataset(train_data)
     loader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True)
     training(model, loader)
+
+    if test_data:
+        testing(model, test_data)
 
 
 if __name__ == '__main__':
