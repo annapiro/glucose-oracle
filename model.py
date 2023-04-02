@@ -14,6 +14,7 @@ device = "cpu"  # for now
 EPOCHS = 20
 BATCH_SIZE = 16
 LR = 0.01
+HIDDEN_SIZE = 12
 MARGIN = 0.5  # error margin within which the prediction is considered correct
 
 
@@ -52,8 +53,8 @@ def preprocess_dps(points: list[Datapoint]) -> tuple[torch.Tensor, torch.Tensor]
                           x.last_carbs,
                           x.last_carbs_time,
                           x.last_insulin,
-                          x.last_insulin_time] for x in points]), \
-        torch.Tensor([x.next_bg for x in points])
+                          x.last_insulin_time] for x in points]).to(torch.device(device)), \
+        torch.Tensor([x.next_bg for x in points]).to(torch.device(device))
 
 
 def training(model: Net, loader: DataLoader):
@@ -128,7 +129,7 @@ def eval_pred(y_pair: tuple[float, float]) -> float:
 
 
 def pipeline(train_data: list[Datapoint], test_data: list[Datapoint]=None):
-    model = Net(6, 24, 1)
+    model = Net(6, HIDDEN_SIZE, 1)
     model = model.to(device)
     train_data = GlucoseDataset(train_data)
     loader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True)
