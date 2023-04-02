@@ -45,11 +45,70 @@ class Datapoint:
             return f"{s:02.0f}s"
 
     def __str__(self) -> str:
-        return f"Datapoint{{current={self.current_bg:.3f}; " \
-               f"next={self.next_bg:.3f}; " \
-               f"avg={self.average_bg:.3f}; " \
-               f"carbs={self.last_carbs:.0f}/{Datapoint.format_seconds(self.last_carbs_time)}; " \
-               f"insulin={self.last_insulin:.0f}/{Datapoint.format_seconds(self.last_insulin_time)}}}"
+        return (
+            f"Datapoint{{current={self.current_bg:.3f}; "
+            f"next={self.next_bg:.3f}; "
+            f"avg={self.average_bg:.3f}; "
+            f"carbs={self.last_carbs:.0f}/{Datapoint.format_seconds(self.last_carbs_time)}; "
+            f"insulin={self.last_insulin:.0f}/{Datapoint.format_seconds(self.last_insulin_time)}}}"
+        )
+
+
+class Normalizer:
+    def __init__(self, data: list[Datapoint]):
+        self.max_current = max(data, key=lambda x: x.current_bg).current_bg
+        self.min_current = min(data, key=lambda x: x.current_bg).current_bg
+
+        self.max_average = max(data, key=lambda x: x.average_bg).average_bg
+        self.min_average = min(data, key=lambda x: x.average_bg).average_bg
+
+        self.min_carbs = min(data, key=lambda x: x.last_carbs).last_carbs
+        self.max_carbs = max(data, key=lambda x: x.last_carbs).last_carbs
+
+        self.min_carbs_time = min(data, key=lambda x: x.last_carbs_time).last_carbs_time
+        self.max_carbs_time = max(data, key=lambda x: x.last_carbs_time).last_carbs_time
+
+        self.min_insulin = min(data, key=lambda x: x.last_insulin).last_insulin
+        self.max_insulin = max(data, key=lambda x: x.last_insulin).last_insulin
+
+        self.min_insulin_time = min(data, key=lambda x: x.last_insulin_time).last_insulin_time
+        self.max_insulin_time = max(data, key=lambda x: x.last_insulin_time).last_insulin_time
+
+    def normalize(self, data: list[Datapoint]):
+        for i in range(len(data)):
+            data[i] = Datapoint(
+                (data[i].current_bg - self.min_current)
+                / (self.max_current - self.min_current),
+                (data[i].average_bg - self.min_average)
+                / (self.max_average - self.min_average),
+                data[i].next_bg,
+                (data[i].last_carbs - self.min_carbs)
+                / (self.max_carbs - self.min_carbs),
+                (data[i].last_carbs_time - self.min_carbs_time)
+                / (self.max_carbs_time - self.min_carbs_time),
+                (data[i].last_insulin - self.min_insulin)
+                / (self.max_insulin - self.min_insulin),
+                (data[i].last_insulin_time - self.min_insulin_time)
+                / (self.max_insulin_time - self.min_insulin_time),
+            )
+
+    def denormalize(self, data: list[Datapoint]):
+        for i in range(len(data)):
+            data[i] = Datapoint(
+                data[i].current_bg * (self.max_current - self.min_current)
+                + self.min_current,
+                data[i].average_bg * (self.max_average - self.min_average)
+                + self.min_average,
+                data[i].next_bg,
+                data[i].last_carbs * (self.max_carbs - self.min_carbs) + self.min_carbs,
+                data[i].last_carbs_time * (self.max_carbs_time - self.min_carbs_time)
+                + self.min_carbs_time,
+                data[i].last_insulin * (self.max_insulin - self.min_insulin)
+                + self.min_insulin,
+                data[i].last_insulin_time
+                * (self.max_insulin_time - self.min_insulin_time)
+                + self.min_insulin_time,
+            )
 
 
 def get_data(
@@ -99,6 +158,12 @@ def test_get_data() -> None:
         print(dataset[i])
 
 
+def normalize(data: list[Datapoint]) -> Normalizer:
+    norm = Normalizer(data)
+    norm.normalize(data)
+    return norm
+
+
 def prep_data(
     glucose: list[tuple[float, float]],
     carbs: list[tuple[float, float]],
@@ -121,11 +186,11 @@ def prep_data(
         #  - be about current-time+next_interval in timeline
         #  - be
         j = -1
-        for ind in range(i+1, len(glucose)):
-            if abs(glucose[ind][1] - (current_time+next_interval)) <= margin:
+        for ind in range(i + 1, len(glucose)):
+            if abs(glucose[ind][1] - (current_time + next_interval)) <= margin:
                 j = ind
                 break
-            elif glucose[ind][1] > current_time+next_interval+margin:
+            elif glucose[ind][1] > current_time + next_interval + margin:
                 break
         if j == -1:
             # could not find appropriate next bg
@@ -182,14 +247,13 @@ def prep_data(
             )
         )
 
+    normalize(res)
     return res
 
 
 def main(filename: str) -> list[Datapoint]:
     glucose, carbs, insulin = get_data(filename)
     return prep_data(glucose, carbs, insulin)
-
-
 
 
 if __name__ == "__main__":
