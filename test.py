@@ -5,6 +5,11 @@ from typing import Iterable
 
 
 def get_data(db_name: str = "data/database.db") -> Iterable[tuple[float, float]]:
+    """
+    TODO
+    :param db_name:
+    :return:
+    """
     con = sqlite3.connect(db_name)
     cur = con.cursor()
     res = cur.execute("select glucose, timestamp from measurements order by 2")
