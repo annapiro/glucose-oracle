@@ -1,15 +1,19 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.cuda import device
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
 from dataset import Datapoint
 
+# device = "cuda" if torch.cuda.is_available() else "cpu"
+device = "cpu" # for now
+
 # hyper-parameters
-EPOCHS = 5
+EPOCHS = 100
 BATCH_SIZE = 64
-LR = 0.001
+LR = 0.04
 
 
 class Net(nn.Module):
@@ -31,8 +35,8 @@ class GlucoseDataset(Dataset):
                                        x.last_carbs,
                                        x.last_carbs_time,
                                        x.last_insulin,
-                                       x.last_insulin_time] for x in points])
-        self.targets = torch.Tensor([x.next_bg for x in points])
+                                       x.last_insulin_time] for x in points]).to(torch.device(device))
+        self.targets = torch.Tensor([x.next_bg for x in points]).to(torch.device(device))
 
     def __len__(self):
         return len(self.features)
@@ -103,7 +107,8 @@ def eval_pred(y_pair: tuple[float, float]) -> float:
 
 
 def pipeline(data: list[Datapoint]):
-    model = Net(6, 12, 1)
+    model = Net(6, 24, 1)
+    model = model.to(device)
     train_data = GlucoseDataset(data)
     loader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True)
     training(model, loader)
